@@ -369,6 +369,88 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["account", "event_id"],
             },
         ),
+        types.Tool(
+            name="calendar_create_event",
+            description="Create a new event on a Google Calendar.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "title": {"type": "string", "description": "Event title/summary"},
+                    "start_time": {
+                        "type": "string",
+                        "description": "Start time in RFC3339 format, e.g. '2026-05-21T19:30:00Z'",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "End time in RFC3339 format, e.g. '2026-05-21T20:30:00Z'",
+                    },
+                    "calendar_id": {
+                        "type": "string",
+                        "description": "Calendar ID (default: 'primary')",
+                        "default": "primary",
+                    },
+                    "description": {"type": "string", "description": "Event description"},
+                    "location": {"type": "string", "description": "Event location"},
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of attendee email addresses",
+                    },
+                },
+                "required": ["account", "title", "start_time", "end_time"],
+            },
+        ),
+        types.Tool(
+            name="calendar_update_event",
+            description="Update an existing calendar event. Only provided fields are changed.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "event_id": {"type": "string", "description": "Event ID to update"},
+                    "calendar_id": {
+                        "type": "string",
+                        "description": "Calendar ID (default: 'primary')",
+                        "default": "primary",
+                    },
+                    "title": {"type": "string", "description": "New event title"},
+                    "start_time": {
+                        "type": "string",
+                        "description": "New start time in RFC3339 format",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "New end time in RFC3339 format",
+                    },
+                    "description": {"type": "string", "description": "New event description"},
+                    "location": {"type": "string", "description": "New event location"},
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Replacement list of attendee email addresses",
+                    },
+                },
+                "required": ["account", "event_id"],
+            },
+        ),
+        types.Tool(
+            name="calendar_delete_event",
+            description="Delete a calendar event permanently.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "event_id": {"type": "string", "description": "Event ID to delete"},
+                    "calendar_id": {
+                        "type": "string",
+                        "description": "Calendar ID (default: 'primary')",
+                        "default": "primary",
+                    },
+                },
+                "required": ["account", "event_id"],
+            },
+        ),
     ]
 
 
@@ -523,6 +605,41 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
         elif name == "calendar_get_event":
             svc = _get_calendar(args["account"])
             return _fmt(svc.get_event(
+                event_id=args["event_id"],
+                calendar_id=args.get("calendar_id", "primary"),
+            ))
+
+        # ---- calendar_create_event ----------------------------------------
+        elif name == "calendar_create_event":
+            svc = _get_calendar(args["account"])
+            return _fmt(svc.create_event(
+                title=args["title"],
+                start_time=args["start_time"],
+                end_time=args["end_time"],
+                calendar_id=args.get("calendar_id", "primary"),
+                description=args.get("description", ""),
+                location=args.get("location", ""),
+                attendees=args.get("attendees"),
+            ))
+
+        # ---- calendar_update_event ----------------------------------------
+        elif name == "calendar_update_event":
+            svc = _get_calendar(args["account"])
+            return _fmt(svc.update_event(
+                event_id=args["event_id"],
+                calendar_id=args.get("calendar_id", "primary"),
+                title=args.get("title"),
+                start_time=args.get("start_time"),
+                end_time=args.get("end_time"),
+                description=args.get("description"),
+                location=args.get("location"),
+                attendees=args.get("attendees"),
+            ))
+
+        # ---- calendar_delete_event ----------------------------------------
+        elif name == "calendar_delete_event":
+            svc = _get_calendar(args["account"])
+            return _fmt(svc.delete_event(
                 event_id=args["event_id"],
                 calendar_id=args.get("calendar_id", "primary"),
             ))
