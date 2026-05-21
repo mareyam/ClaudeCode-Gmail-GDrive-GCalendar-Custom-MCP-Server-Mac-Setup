@@ -29,3 +29,11 @@ def get_credentials_dir(config: Dict[str, Any], base_dir: Path = DEFAULT_CONFIG_
 
 def get_client_secret_path(config: Dict[str, Any]) -> Path:
     return get_credentials_dir(config) / "client_secret.json"
+
+
+def save_config(config: Dict[str, Any], config_path: Path = DEFAULT_CONFIG_PATH) -> None:
+    tmp_path = config_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w") as f:
+        json.dump(config, f, indent=2)
+        f.write("\n")
+    tmp_path.replace(config_path)

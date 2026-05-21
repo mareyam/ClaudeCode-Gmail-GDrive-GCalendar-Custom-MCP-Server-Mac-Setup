@@ -81,3 +81,11 @@ class AuthManager:
         if not self.tokens_dir.exists():
             return []
         return [p.stem for p in self.tokens_dir.glob("*.json")]
+
+    def revoke_credentials(self, account_name: str) -> bool:
+        """Delete the stored token for an account. Returns True if a token existed."""
+        token_path = self.get_token_path(account_name)
+        if token_path.exists():
+            token_path.unlink()
+            return True
+        return False

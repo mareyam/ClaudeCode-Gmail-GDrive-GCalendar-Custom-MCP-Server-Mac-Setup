@@ -19,7 +19,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from auth import AuthManager
-from config import get_accounts, get_client_secret_path, get_credentials_dir, load_config
+from config import get_accounts, get_client_secret_path, get_credentials_dir, load_config, save_config
 from gcalendar import CalendarService
 from gmail import GmailService
 
@@ -89,6 +89,82 @@ async def list_tools() -> list[types.Tool]:
                 "along with their authentication status."
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        types.Tool(
+            name="link_account",
+            description=(
+                "Link (authenticate) a Gmail account via OAuth. "
+                "If 'account' is omitted, lists all accounts and asks which one to link. "
+                "Opens a browser window for the user to sign in."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Account name to link (e.g. 'personal', 'work'). Omit to see available accounts.",
+                    }
+                },
+            },
+        ),
+        types.Tool(
+            name="unlink_account",
+            description=(
+                "Unlink (revoke local credentials for) a Gmail account. "
+                "If 'account' is omitted, lists all currently linked accounts and asks which one to unlink."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Account name to unlink (e.g. 'personal', 'work'). Omit to see linked accounts.",
+                    }
+                },
+            },
+        ),
+        types.Tool(
+            name="add_account",
+            description=(
+                "Add a new Gmail account to this MCP server's config and immediately "
+                "trigger OAuth so it is ready to use. "
+                "Returns an error if an account with that name already exists."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Short name/key for the account (e.g. 'personal', 'work2'). Must be unique.",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Gmail address for this account (e.g. 'you@gmail.com').",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional human-readable label (e.g. 'Side project account').",
+                    },
+                },
+                "required": ["account", "email"],
+            },
+        ),
+        types.Tool(
+            name="remove_account",
+            description=(
+                "Remove a Gmail account from this MCP server's config, revoke its local "
+                "credentials, and delete its entry from config.json. "
+                "If 'account' is omitted, lists all configured accounts and asks which to remove."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Account name to remove. Omit to see all configured accounts.",
+                    }
+                },
+            },
         ),
         types.Tool(
             name="gmail_get_profile",
@@ -472,6 +548,147 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
                     "status": "ready" if authenticated else "not authenticated — run setup_auth.py",
                 })
             return _fmt(result)
+
+        # ---- link_account ------------------------------------------------
+        elif name == "link_account":
+            account = args.get("account")
+            if not account:
+                choices = [
+                    {
+                        "name": acct,
+                        "email": info.get("email", ""),
+                        "authenticated": _auth.is_authenticated(acct),
+                    }
+                    for acct, info in _accounts.items()
+                ]
+                return _fmt({
+                    "message": "Which account would you like to link? Please call link_account again with 'account' set to one of the names below.",
+                    "available_accounts": choices,
+                })
+            if account not in _accounts:
+                return _fmt(f"Error: Unknown account '{account}'. Available: {list(_accounts.keys())}")
+            email = _accounts[account].get("email")
+            _auth.authenticate(account, email=email)
+            return _fmt({
+                "status": "linked",
+                "account": account,
+                "email": email,
+            })
+
+        # ---- unlink_account ----------------------------------------------
+        elif name == "unlink_account":
+            account = args.get("account")
+            if not account:
+                linked = [
+                    {"name": acct, "email": _accounts[acct].get("email", "")}
+                    for acct in _accounts
+                    if _auth.is_authenticated(acct)
+                ]
+                if not linked:
+                    return _fmt("No accounts are currently linked.")
+                return _fmt({
+                    "message": "Which account would you like to unlink? Please call unlink_account again with 'account' set to one of the names below.",
+                    "linked_accounts": linked,
+                })
+            if account not in _accounts:
+                return _fmt(f"Error: Unknown account '{account}'. Available: {list(_accounts.keys())}")
+            removed = _auth.revoke_credentials(account)
+            if removed:
+                return _fmt({
+                    "status": "unlinked",
+                    "account": account,
+                    "email": _accounts[account].get("email", ""),
+                })
+            return _fmt(f"Account '{account}' was not linked (no credentials found).")
+
+        # ---- add_account -------------------------------------------------
+        elif name == "add_account":
+            account = args["account"].strip()
+            email = args["email"].strip()
+            description = args.get("description", "").strip()
+
+            if account in _accounts:
+                return _fmt(
+                    f"Error: Account '{account}' already exists "
+                    f"(email: {_accounts[account].get('email', '?')}). "
+                    "Use a different name or remove the existing account first."
+                )
+
+            entry: dict = {"email": email}
+            if description:
+                entry["description"] = description
+
+            _accounts[account] = entry
+            try:
+                save_config(_config)
+            except Exception as exc:
+                del _accounts[account]
+                raise RuntimeError(f"Failed to save config: {exc}") from exc
+
+            try:
+                _auth.authenticate(account, email=email)
+                auth_status = "linked"
+                auth_note = "OAuth completed — account is ready to use."
+            except Exception as exc:
+                auth_status = "not linked"
+                auth_note = (
+                    f"Account added to config but OAuth did not complete ({exc}). "
+                    "Call link_account to authenticate when ready."
+                )
+
+            return _fmt({
+                "status": "added",
+                "account": account,
+                "email": email,
+                "description": description or None,
+                "auth_status": auth_status,
+                "note": auth_note,
+            })
+
+        # ---- remove_account ----------------------------------------------
+        elif name == "remove_account":
+            account = args.get("account")
+
+            if not account:
+                choices = [
+                    {
+                        "name": acct,
+                        "email": info.get("email", ""),
+                        "description": info.get("description", ""),
+                        "authenticated": _auth.is_authenticated(acct),
+                    }
+                    for acct, info in _accounts.items()
+                ]
+                if not choices:
+                    return _fmt("No accounts are configured.")
+                return _fmt({
+                    "message": (
+                        "Which account would you like to remove? "
+                        "Call remove_account again with 'account' set to one of the names below."
+                    ),
+                    "configured_accounts": choices,
+                })
+
+            if account not in _accounts:
+                return _fmt(f"Error: Unknown account '{account}'. Available: {list(_accounts.keys())}")
+
+            removed_info = dict(_accounts[account])
+            had_token = _auth.revoke_credentials(account)
+            del _accounts[account]
+            try:
+                save_config(_config)
+            except Exception as exc:
+                _accounts[account] = removed_info
+                raise RuntimeError(
+                    f"Credentials were revoked but config could not be saved: {exc}"
+                ) from exc
+
+            return _fmt({
+                "status": "removed",
+                "account": account,
+                "email": removed_info.get("email", ""),
+                "credentials_revoked": had_token,
+            })
 
         # ---- gmail_get_profile --------------------------------------------
         elif name == "gmail_get_profile":
