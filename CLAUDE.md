@@ -21,3 +21,6 @@ This MCP server manages multiple Google accounts. When the user refers to "perso
 - "events from my work calendar" → `calendar_list_events(account="work", calendar_id="primary")`
 - "emails from both accounts" → call `gmail_search` twice, once per account
 - "add to my work calendar" → `calendar_create_event(account="work", ...)`
+- "find files in my work drive" → `drive_search(account="work", query="...")`
+- "list recent files in personal drive" → `drive_list_files(account="personal")`
+- "read that Google Doc" → `drive_read_file(account="...", file_id="...")`

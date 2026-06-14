@@ -21,6 +21,7 @@ from mcp.server.stdio import stdio_server
 from auth import AuthManager
 from config import get_accounts, get_client_secret_path, get_credentials_dir, load_config, save_config
 from gcalendar import CalendarService
+from gdrive import DriveService
 from gmail import GmailService
 
 # ---------------------------------------------------------------------------
@@ -64,6 +65,10 @@ def _get_service(account_name: str) -> GmailService:
 
 def _get_calendar(account_name: str) -> CalendarService:
     return CalendarService(_get_creds(account_name), account_name)
+
+
+def _get_drive(account_name: str) -> DriveService:
+    return DriveService(_get_creds(account_name), account_name)
 
 
 def _fmt(data: Any) -> list[types.TextContent]:
@@ -527,6 +532,98 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["account", "event_id"],
             },
         ),
+        # ── Drive tools ─────────────────────────────────────────────────────
+        types.Tool(
+            name="drive_list_files",
+            description="List files in Google Drive for an account, ordered by most recently modified.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "max_results": {"type": "integer", "description": "Max files to return (default 20)", "default": 20},
+                    "folder_id": {"type": "string", "description": "Limit to files inside this folder ID. Omit for all files."},
+                    "mime_type": {"type": "string", "description": "Filter by MIME type, e.g. 'application/vnd.google-apps.document'"},
+                },
+                "required": ["account"],
+            },
+        ),
+        types.Tool(
+            name="drive_search",
+            description="Search Google Drive files by name or content across an account.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "query": {"type": "string", "description": "Search keyword(s) — matches file names and full text"},
+                    "max_results": {"type": "integer", "description": "Max results (default 20)", "default": 20},
+                },
+                "required": ["account", "query"],
+            },
+        ),
+        types.Tool(
+            name="drive_list_folders",
+            description="List all folders in Google Drive for an account.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "max_results": {"type": "integer", "description": "Max folders to return (default 20)", "default": 20},
+                },
+                "required": ["account"],
+            },
+        ),
+        types.Tool(
+            name="drive_get_file",
+            description="Get metadata for a specific Google Drive file by its ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "file_id": {"type": "string", "description": "Google Drive file ID"},
+                },
+                "required": ["account", "file_id"],
+            },
+        ),
+        types.Tool(
+            name="drive_read_file",
+            description=(
+                "Read the text content of a Google Drive file. "
+                "Google Docs export as plain text, Sheets as CSV, Slides as plain text. "
+                "Binary files (images, PDFs) are not readable — use drive_download_file instead."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "file_id": {"type": "string", "description": "Google Drive file ID"},
+                },
+                "required": ["account", "file_id"],
+            },
+        ),
+        types.Tool(
+            name="drive_download_file",
+            description="Download the raw content of a Google Drive file. Returns UTF-8 text or hex for binary files.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "file_id": {"type": "string", "description": "Google Drive file ID"},
+                },
+                "required": ["account", "file_id"],
+            },
+        ),
+        types.Tool(
+            name="drive_delete_file",
+            description="Move a Google Drive file to trash.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "description": "Account name"},
+                    "file_id": {"type": "string", "description": "Google Drive file ID"},
+                },
+                "required": ["account", "file_id"],
+            },
+        ),
     ]
 
 
@@ -860,6 +957,48 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
                 event_id=args["event_id"],
                 calendar_id=args.get("calendar_id", "primary"),
             ))
+
+        # ---- drive_list_files --------------------------------------------
+        elif name == "drive_list_files":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.list_files(
+                max_results=int(args.get("max_results", 20)),
+                folder_id=args.get("folder_id"),
+                mime_type=args.get("mime_type"),
+            ))
+
+        # ---- drive_search ------------------------------------------------
+        elif name == "drive_search":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.search_files(
+                query=args["query"],
+                max_results=int(args.get("max_results", 20)),
+            ))
+
+        # ---- drive_list_folders ------------------------------------------
+        elif name == "drive_list_folders":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.list_folders(max_results=int(args.get("max_results", 20))))
+
+        # ---- drive_get_file ----------------------------------------------
+        elif name == "drive_get_file":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.get_file(args["file_id"]))
+
+        # ---- drive_read_file ---------------------------------------------
+        elif name == "drive_read_file":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.read_file(args["file_id"]))
+
+        # ---- drive_download_file -----------------------------------------
+        elif name == "drive_download_file":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.download_file(args["file_id"]))
+
+        # ---- drive_delete_file -------------------------------------------
+        elif name == "drive_delete_file":
+            svc = _get_drive(args["account"])
+            return _fmt(svc.delete_file(args["file_id"]))
 
         else:
             return _fmt(f"Unknown tool: {name}")
