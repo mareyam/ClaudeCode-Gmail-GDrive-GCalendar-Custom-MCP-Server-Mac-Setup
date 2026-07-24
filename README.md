@@ -117,6 +117,7 @@ All tools will appear automatically.
 | `gmail_read_thread` | Read all messages in a thread |
 | `gmail_send` | Send an email from a specific account |
 | `gmail_create_draft` | Save an email as a draft |
+| `gmail_send_draft` | Send an existing draft by its draft ID |
 | `gmail_list_drafts` | List drafts in an account |
 | `gmail_list_labels` | List all labels and folders |
 | `gmail_modify_labels` | Add or remove labels (mark read/unread, star, etc.) |

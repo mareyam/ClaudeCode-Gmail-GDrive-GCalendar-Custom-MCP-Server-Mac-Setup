@@ -295,6 +295,24 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="gmail_send_draft",
+            description="Send an existing draft email by its draft ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Account that owns the draft",
+                    },
+                    "draft_id": {
+                        "type": "string",
+                        "description": "Draft ID (from gmail_list_drafts)",
+                    },
+                },
+                "required": ["account", "draft_id"],
+            },
+        ),
+        types.Tool(
             name="gmail_list_drafts",
             description="List draft emails in a Gmail account.",
             inputSchema={
@@ -530,6 +548,47 @@ async def list_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["account", "event_id"],
+            },
+        ),
+        types.Tool(
+            name="calendar_sync_blocks",
+            description=(
+                "Sync busy blocks from one calendar account to another. "
+                "For every event on the source account, a block labelled "
+                "'[source] Booked at HH:MM AM/PM' is created on the target account "
+                "so that the time slot appears occupied and conflicts are visible."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_account": {
+                        "type": "string",
+                        "description": "Account whose events will be mirrored (e.g. 'personal')",
+                    },
+                    "target_account": {
+                        "type": "string",
+                        "description": "Account that receives the block events (e.g. 'work')",
+                    },
+                    "time_min": {
+                        "type": "string",
+                        "description": "Start of the window to sync (ISO 8601). Defaults to now.",
+                    },
+                    "time_max": {
+                        "type": "string",
+                        "description": "End of the window to sync (ISO 8601). Optional.",
+                    },
+                    "source_calendar_id": {
+                        "type": "string",
+                        "description": "Calendar ID on the source account (default: 'primary')",
+                        "default": "primary",
+                    },
+                    "target_calendar_id": {
+                        "type": "string",
+                        "description": "Calendar ID on the target account (default: 'primary')",
+                        "default": "primary",
+                    },
+                },
+                "required": ["source_account", "target_account"],
             },
         ),
         # ── Drive tools ─────────────────────────────────────────────────────
@@ -862,6 +921,16 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
             )
             return _fmt({"status": "draft created", "draft_id": result.get("id")})
 
+        # ---- gmail_send_draft --------------------------------------------
+        elif name == "gmail_send_draft":
+            svc = _get_service(args["account"])
+            result = svc.send_draft(args["draft_id"])
+            return _fmt({
+                "status": "sent",
+                "message_id": result.get("id"),
+                "thread_id": result.get("threadId"),
+            })
+
         # ---- gmail_list_drafts --------------------------------------------
         elif name == "gmail_list_drafts":
             svc = _get_service(args["account"])
@@ -925,8 +994,9 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
 
         # ---- calendar_create_event ----------------------------------------
         elif name == "calendar_create_event":
-            svc = _get_calendar(args["account"])
-            return _fmt(svc.create_event(
+            source_account = args["account"]
+            svc = _get_calendar(source_account)
+            created = svc.create_event(
                 title=args["title"],
                 start_time=args["start_time"],
                 end_time=args["end_time"],
@@ -934,7 +1004,31 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
                 description=args.get("description", ""),
                 location=args.get("location", ""),
                 attendees=args.get("attendees"),
-            ))
+            )
+
+            # Auto-push a busy block to every other configured account
+            blocks_pushed = []
+            for other_account in _accounts:
+                if other_account == source_account:
+                    continue
+                try:
+                    target_svc = _get_calendar(other_account)
+                    result = target_svc.sync_blocks_from(
+                        source_service=svc,
+                        time_min=args["start_time"],
+                        time_max=args["end_time"],
+                        source_calendar_id=args.get("calendar_id", "primary"),
+                        target_calendar_id="primary",
+                    )
+                    blocks_pushed.append({
+                        "target_account": other_account,
+                        "blocks_created": result["blocks_created"],
+                        "blocks_skipped": result["blocks_skipped"],
+                    })
+                except Exception as e:
+                    blocks_pushed.append({"target_account": other_account, "error": str(e)})
+
+            return _fmt({**created, "synced_blocks": blocks_pushed})
 
         # ---- calendar_update_event ----------------------------------------
         elif name == "calendar_update_event":
@@ -956,6 +1050,18 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
             return _fmt(svc.delete_event(
                 event_id=args["event_id"],
                 calendar_id=args.get("calendar_id", "primary"),
+            ))
+
+        # ---- calendar_sync_blocks ----------------------------------------
+        elif name == "calendar_sync_blocks":
+            source_svc = _get_calendar(args["source_account"])
+            target_svc = _get_calendar(args["target_account"])
+            return _fmt(target_svc.sync_blocks_from(
+                source_service=source_svc,
+                time_min=args.get("time_min"),
+                time_max=args.get("time_max"),
+                source_calendar_id=args.get("source_calendar_id", "primary"),
+                target_calendar_id=args.get("target_calendar_id", "primary"),
             ))
 
         # ---- drive_list_files --------------------------------------------

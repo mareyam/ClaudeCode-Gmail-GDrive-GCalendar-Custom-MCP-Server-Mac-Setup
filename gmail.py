@@ -105,6 +105,11 @@ class GmailService:
             userId="me", body={"message": {"raw": self._encode(msg)}}
         ).execute()
 
+    def send_draft(self, draft_id: str) -> Dict[str, Any]:
+        return self.service.users().drafts().send(
+            userId="me", body={"id": draft_id}
+        ).execute()
+
     def list_drafts(self, max_results: int = 20) -> List[Dict[str, Any]]:
         result = self.service.users().drafts().list(
             userId="me", maxResults=min(max_results, 50)

@@ -168,6 +168,85 @@ class CalendarService:
             "message": f"Event {event_id} deleted from {calendar_id}",
         }
 
+    # ------------------------------------------------------------------ sync / conflict blocking
+
+    def sync_blocks_from(
+        self,
+        source_service: "CalendarService",
+        time_min: Optional[str] = None,
+        time_max: Optional[str] = None,
+        source_calendar_id: str = "primary",
+        target_calendar_id: str = "primary",
+    ) -> Dict[str, Any]:
+        """
+        Fetch events from source_service and create block events on this calendar
+        so that every occupied slot is marked busy with a label like
+        '[personal] Booked at 10:00 AM'.
+        Returns a summary of how many blocks were created or skipped.
+        """
+        source_events = source_service.list_events(
+            time_min=time_min,
+            time_max=time_max,
+            max_results=50,
+            calendar_id=source_calendar_id,
+        )["events"]
+
+        created = []
+        skipped = []
+
+        for event in source_events:
+            # Skip all-day events — they don't have a specific time slot
+            if event["allDay"]:
+                skipped.append({"reason": "all-day", "summary": event["summary"]})
+                continue
+
+            start_dt = event["start"]
+            end_dt = event["end"]
+
+            # Build a human-readable time label from the ISO start string
+            try:
+                dt = datetime.fromisoformat(start_dt.replace("Z", "+00:00"))
+                time_label = dt.strftime("%-I:%M %p")
+            except Exception:
+                time_label = start_dt
+
+            block_title = f"[{source_service.account_name}] Booked at {time_label}"
+            block_description = (
+                f"This slot is blocked because {source_service.account_name} has: "
+                f'"{event["summary"]}" at this time.'
+            )
+
+            # Check if an identical block already exists to avoid duplicates
+            existing = self.service.events().list(
+                calendarId=target_calendar_id,
+                timeMin=start_dt if start_dt.endswith("Z") or "+" in start_dt else start_dt + "Z",
+                timeMax=end_dt if end_dt.endswith("Z") or "+" in end_dt else end_dt + "Z",
+                q=block_title,
+                singleEvents=True,
+            ).execute().get("items", [])
+
+            if existing:
+                skipped.append({"reason": "already exists", "summary": block_title})
+                continue
+
+            created_event = self.create_event(
+                title=block_title,
+                start_time=start_dt,
+                end_time=end_dt,
+                calendar_id=target_calendar_id,
+                description=block_description,
+            )
+            created.append(created_event)
+
+        return {
+            "source_account": source_service.account_name,
+            "target_account": self.account_name,
+            "blocks_created": len(created),
+            "blocks_skipped": len(skipped),
+            "created": created,
+            "skipped": skipped,
+        }
+
     # ------------------------------------------------------------------ internals
 
     def _parse_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
