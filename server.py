@@ -271,6 +271,18 @@ async def list_tools() -> list[types.Tool]:
                     "body": {"type": "string", "description": "Email body (plain text)"},
                     "cc": {"type": "string", "description": "CC recipients, comma-separated"},
                     "bcc": {"type": "string", "description": "BCC recipients, comma-separated"},
+                    "thread_id": {
+                        "type": "string",
+                        "description": "Thread ID to reply into (threadId from search results). Nests this message into an existing conversation.",
+                    },
+                    "in_reply_to": {
+                        "type": "string",
+                        "description": "Message-ID of the message being replied to (the 'message-id' field from gmail_read_message). Sets the In-Reply-To MIME header.",
+                    },
+                    "references": {
+                        "type": "string",
+                        "description": "Space-separated chain of Message-IDs for the thread (usually same as in_reply_to for a direct reply). Sets the References MIME header.",
+                    },
                 },
                 "required": ["account", "to", "subject", "body"],
             },
@@ -290,6 +302,18 @@ async def list_tools() -> list[types.Tool]:
                     "body": {"type": "string", "description": "Email body (plain text)"},
                     "cc": {"type": "string", "description": "CC recipients"},
                     "bcc": {"type": "string", "description": "BCC recipients"},
+                    "thread_id": {
+                        "type": "string",
+                        "description": "Thread ID to reply into (threadId from search results). Nests this draft into an existing conversation.",
+                    },
+                    "in_reply_to": {
+                        "type": "string",
+                        "description": "Message-ID of the message being replied to (the 'message-id' field from gmail_read_message). Sets the In-Reply-To MIME header.",
+                    },
+                    "references": {
+                        "type": "string",
+                        "description": "Space-separated chain of Message-IDs for the thread (usually same as in_reply_to for a direct reply). Sets the References MIME header.",
+                    },
                 },
                 "required": ["account", "to", "subject", "body"],
             },
@@ -902,6 +926,9 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
                 body=args["body"],
                 cc=args.get("cc", ""),
                 bcc=args.get("bcc", ""),
+                thread_id=args.get("thread_id", ""),
+                in_reply_to=args.get("in_reply_to", ""),
+                references=args.get("references", ""),
             )
             return _fmt({
                 "status": "sent",
@@ -918,6 +945,9 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
                 body=args["body"],
                 cc=args.get("cc", ""),
                 bcc=args.get("bcc", ""),
+                thread_id=args.get("thread_id", ""),
+                in_reply_to=args.get("in_reply_to", ""),
+                references=args.get("references", ""),
             )
             return _fmt({"status": "draft created", "draft_id": result.get("id")})
 

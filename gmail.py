@@ -72,6 +72,9 @@ class GmailService:
         body: str,
         cc: str = "",
         bcc: str = "",
+        thread_id: str = "",
+        in_reply_to: str = "",
+        references: str = "",
     ) -> Dict[str, Any]:
         msg = MIMEText(body, "plain")
         msg["to"] = to
@@ -80,9 +83,16 @@ class GmailService:
             msg["cc"] = cc
         if bcc:
             msg["bcc"] = bcc
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+        if references:
+            msg["References"] = references
 
+        api_body: Dict[str, Any] = {"raw": self._encode(msg)}
+        if thread_id:
+            api_body["threadId"] = thread_id
         return self.service.users().messages().send(
-            userId="me", body={"raw": self._encode(msg)}
+            userId="me", body=api_body
         ).execute()
 
     def create_draft(
@@ -92,6 +102,9 @@ class GmailService:
         body: str,
         cc: str = "",
         bcc: str = "",
+        thread_id: str = "",
+        in_reply_to: str = "",
+        references: str = "",
     ) -> Dict[str, Any]:
         msg = MIMEText(body, "plain")
         msg["to"] = to
@@ -100,9 +113,16 @@ class GmailService:
             msg["cc"] = cc
         if bcc:
             msg["bcc"] = bcc
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+        if references:
+            msg["References"] = references
 
+        message_body: Dict[str, Any] = {"raw": self._encode(msg)}
+        if thread_id:
+            message_body["threadId"] = thread_id
         return self.service.users().drafts().create(
-            userId="me", body={"message": {"raw": self._encode(msg)}}
+            userId="me", body={"message": message_body}
         ).execute()
 
     def send_draft(self, draft_id: str) -> Dict[str, Any]:
@@ -181,6 +201,7 @@ class GmailService:
             "to": headers.get("to", ""),
             "cc": headers.get("cc", ""),
             "subject": headers.get("subject", "(no subject)"),
+            "message-id": headers.get("message-id", ""),
             "body": body,
         }
 
